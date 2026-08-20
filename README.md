@@ -2,6 +2,20 @@
 
 [中文](./README.zh-CN.md)
 
+<p align="center">
+  <a href="https://guojiz.github.io/"><img alt="Website" src="https://img.shields.io/badge/website-guojiz.github.io-111111?style=flat-square"></a>
+  <a href="https://github.com/Guojiz/Sponsors"><img alt="Sponsor" src="https://img.shields.io/badge/sponsor-support-111111?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="https://guojiz.github.io/"><strong>Author website</strong></a>
+  · <a href="https://x.com/guojizh">X</a>
+  · <a href="https://space.bilibili.com/3493114115263006">Bilibili</a>
+  · <a href="https://youtube.com/@guojizh">YouTube</a>
+  · <a href="https://github.com/Guojiz/Sponsors">Sponsor</a>
+</p>
+
+
 **Turn any online video link into a clean transcript — read the subtitles the platform already has. Human tracks first, auto tracks as fallback. No video download, no ASR.**
 
 The core of this repo is the recipe in [`SKILL.md`](./SKILL.md): one shared pipeline, with YouTube and Bilibili as verified adapters. Any other site falls back to generic discovery — no support claimed.
@@ -67,6 +81,30 @@ Drive the user's real browser (their login session) through a bridge like Kimi W
 ## Contributing
 
 Site adapters welcome: follow the shared pipeline and the `Cue` model, use public examples, label "verified" or "experimental" honestly. See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Website and other links
+
+No separate product site is required for this repository. The public face of the work is the author website, this GitHub repo, and the projects below.
+
+| | |
+| --- | --- |
+| **Project page** | https://guojiz.github.io/ai-subtitle-extractor/ |
+| **Author website** | https://guojiz.github.io/ |
+| **X** | https://x.com/guojizh |
+| **Bilibili** | https://space.bilibili.com/3493114115263006 |
+| **YouTube** | https://youtube.com/@guojizh |
+| **Sponsor** | https://github.com/Guojiz/Sponsors |
+
+### Other open-source projects
+
+- [GitLearnOS](https://guojiz.github.io/gitlearnos/) — learner-owned Git memory
+- [Word Snap](https://guojiz.github.io/word-snap/) — bilingual vocabulary matching
+- [AI Subtitle Extractor](https://github.com/Guojiz/ai-subtitle-extractor)
+- [Design Master](https://github.com/Guojiz/design-master)
+- [AI Video Studio](https://github.com/Guojiz/comfyui-minimax-h3-studio)
+- [llm-provider-compat](https://github.com/Guojiz/llm-provider-compat)
+- [Claude Desktop Tweak Models](https://github.com/Guojiz/claude-desktop-tweak-models)
+- All projects: [github.com/Guojiz](https://github.com/Guojiz)
 
 ## License
 
