@@ -12,7 +12,7 @@ OUT = ROOT / "userscripts" / "ai-subtitle-extractor.user.js"
 HEADER = """// ==UserScript==
 // @name         AI Subtitle Extractor
 // @namespace    https://github.com/Guojiz/ai-subtitle-extractor
-// @version      0.3.0
+// @version      0.4.0
 // @description  Platform-agnostic page inject: export existing captions (YouTube/Bilibili/general discovery). Works with Tampermonkey and agent-browser. Standalone. Not affiliated with commercial translate extensions.
 // @author       AI Subtitle Extractor contributors
 // @match        *://*/*
@@ -89,6 +89,24 @@ UI_SHELL = r"""
       .slice(0, 80);
   }
 
+  function confirmLawfulUse() {
+    const target = location.href;
+    const key = NS + "-lawful-use-v2:" + target;
+    try {
+      if (sessionStorage.getItem(key) === "accepted") return true;
+    } catch (_) {}
+    const notice = window.__ovsLawfulUseNotice ||
+      "我确认我有权访问该视频和字幕，并仅在法律允许的个人学习、研究或经授权范围内使用；我不会用本工具侵犯版权或规避付费、登录及其他访问控制。";
+    if (!window.confirm(
+      notice +
+      "\n\n操作位置：当前浏览器标签页" +
+      "\n目标视频：" + target +
+      "\n\n仅对此视频确认后继续。"
+    )) return false;
+    try { sessionStorage.setItem(key, "accepted"); } catch (_) {}
+    return true;
+  }
+
   function toMarkdown(r) {
     return [
       `# ${r.title || "(untitled)"}`,
@@ -159,6 +177,10 @@ UI_SHELL = r"""
     let last = null;
 
     async function run() {
+      if (!confirmLawfulUse()) {
+        toast("未确认合法使用，已取消", false);
+        return;
+      }
       if (typeof window.__ovsExportSubtitle !== "function") {
         toast("export core not loaded", false);
         return;
@@ -166,6 +188,10 @@ UI_SHELL = r"""
       btnExport.disabled = true;
       btnExport.textContent = "导出中…";
       try {
+        if (window.__ovsPlatform && window.__ovsPlatform() === "youtube") {
+          const auth = window.__ovsAuthorizeTarget(location.href, true);
+          if (!auth || !auth.ok) throw new Error((auth && auth.error) || "目标视频授权失败");
+        }
         last = await window.__ovsExportSubtitle({ lang: lang.value.trim() });
         downloadText(safeName(last.title) + ".md", toMarkdown(last));
         toast(`OK · ${(last.cues && last.cues.length) || 0} cues`, true);
@@ -181,6 +207,7 @@ UI_SHELL = r"""
     btnExport.onclick = run;
     btnCopy.onclick = async () => {
       try {
+        if (!confirmLawfulUse()) return;
         if (!last) await run();
         if (!last) return;
         toast((await copyText(last.plain_text || "")) ? "已复制" : "复制失败", true);
@@ -190,6 +217,7 @@ UI_SHELL = r"""
     };
     btnJson.onclick = async () => {
       try {
+        if (!confirmLawfulUse()) return;
         if (!last) await run();
         if (!last) return;
         downloadText(safeName(last.title) + ".json", JSON.stringify(last, null, 2));

@@ -36,6 +36,12 @@ from lib.models import ExtractResult  # noqa: E402
 from lib.youtube import extract_youtube  # noqa: E402
 
 
+LAWFUL_USE_ATTESTATION = (
+    "我确认我有权访问该视频和字幕，并仅在法律允许的个人学习、研究或经授权范围内使用；"
+    "我不会用本工具侵犯版权或规避付费、登录及其他访问控制。"
+)
+
+
 def extract(
     url: str,
     *,
@@ -44,6 +50,7 @@ def extract(
     browser: bool = False,
     agent_browser: bool = False,
     headed: bool = False,
+    acknowledge_lawful_use: bool = False,
 ) -> ExtractResult:
     """
     Access backends (generic):
@@ -54,7 +61,10 @@ def extract(
     # Force agent-browser path (any site: inject page core)
     if agent_browser:
         return extract_with_agent_browser(
-            url, prefer_lang=lang, headed=headed
+            url,
+            prefer_lang=lang,
+            headed=headed,
+            acknowledge_lawful_use=acknowledge_lawful_use,
         )
 
     ad = adapter if adapter and adapter != "auto" else detect_adapter(url)
@@ -76,22 +86,40 @@ def extract(
             return result
         if agent_browser_available():
             ab = extract_with_agent_browser(
-                url, prefer_lang=lang, headed=headed
+                url,
+                prefer_lang=lang,
+                headed=headed,
+                acknowledge_lawful_use=acknowledge_lawful_use,
             )
             if ab.ok:
                 return ab
             # fall through to WebBridge with both errors
-            wb = extract_youtube(url, prefer_lang=lang, use_browser=True)
+            wb = extract_youtube(
+                url,
+                prefer_lang=lang,
+                use_browser=True,
+                acknowledge_lawful_use=acknowledge_lawful_use,
+            )
             if not wb.ok:
                 wb.limits = list(wb.limits or []) + [
                     f"agent-browser also failed: {ab.error}"
                 ]
             return wb
-        return extract_youtube(url, prefer_lang=lang, use_browser=True)
+        return extract_youtube(
+            url,
+            prefer_lang=lang,
+            use_browser=True,
+            acknowledge_lawful_use=acknowledge_lawful_use,
+        )
 
     # Unknown site: HTTP has no adapter; browser only if requested
     if browser and agent_browser_available():
-        return extract_with_agent_browser(url, prefer_lang=lang, headed=headed)
+        return extract_with_agent_browser(
+            url,
+            prefer_lang=lang,
+            headed=headed,
+            acknowledge_lawful_use=acknowledge_lawful_use,
+        )
     gen = extract_general(url, prefer_lang=lang)
     if browser:
         gen.limits = list(gen.limits or []) + [
@@ -168,7 +196,37 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Show browser window when using agent-browser",
     )
+    p.add_argument(
+        "--acknowledge-lawful-use",
+        action="store_true",
+        help="Confirm lawful access/use before extracting a full transcript",
+    )
     args = p.parse_args(argv)
+
+    acknowledged = args.acknowledge_lawful_use
+    if not acknowledged:
+        if sys.stdin.isatty():
+            if args.agent_browser:
+                surface = "新的 agent-browser 浏览器页面"
+            elif args.browser:
+                surface = "浏览器回退（agent-browser 或已连接的 WebBridge）"
+            else:
+                surface = "本机 CLI/HTTP（无播放器 UI，不会点击广告）"
+            print(LAWFUL_USE_ATTESTATION, file=sys.stderr)
+            print(f"操作位置：{surface}", file=sys.stderr)
+            print(f"目标视频：{args.url}", file=sys.stderr)
+            answer = input("输入“我确认”后继续，其他输入将取消：").strip()
+            if answer != "我确认":
+                print("已取消：未确认合法使用。", file=sys.stderr)
+                return 2
+            acknowledged = True
+        else:
+            print(
+                "Full transcript export requires lawful-use acknowledgement. "
+                "Review the notice and rerun with --acknowledge-lawful-use.",
+                file=sys.stderr,
+            )
+            return 2
 
     try:
         result = extract(
@@ -178,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
             browser=args.browser,
             agent_browser=args.agent_browser,
             headed=args.headed,
+            acknowledge_lawful_use=acknowledged,
         )
     except Exception as e:
         result = ExtractResult(

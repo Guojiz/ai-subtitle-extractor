@@ -20,6 +20,8 @@
 
   const GAP_SEC = 1.5;
   const MAX_CHARS = 260;
+  const LAWFUL_USE_NOTICE =
+    "我确认我有权访问该视频和字幕，并仅在法律允许的个人学习、研究或经授权范围内使用；我不会用本工具侵犯版权或规避付费、登录及其他访问控制。此确认不是法律意见，也不会改变平台或模型的规则。";
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -72,6 +74,89 @@
     if (h.includes("youtube") || h.includes("youtu.be")) return "youtube";
     if (h.includes("bilibili.com") || h === "b23.tv") return "bilibili";
     return "general";
+  }
+
+  // ---- YouTube ad handling ----
+  // Only click YouTube's own visible "Skip ad" control. Do not seek, hide ad
+  // overlays, or attempt to bypass ads that YouTube marks as unskippable.
+  function authorizeYoutubeTarget(targetUrl, acknowledgeLawfulUse) {
+    if (acknowledgeLawfulUse !== true) {
+      return { ok: false, requires_acknowledgement: true, acknowledgement: LAWFUL_USE_NOTICE };
+    }
+    let targetId = null;
+    try {
+      const u = new URL(targetUrl);
+      targetId = u.searchParams.get("v") ||
+        (u.hostname === "youtu.be" ? u.pathname.split("/").filter(Boolean)[0] : null) ||
+        ((u.pathname.match(/\/(?:shorts|embed|live)\/([\w-]{11})/) || [])[1]);
+    } catch (_) {}
+    const currentId = ytVideoId();
+    if (!targetId || !currentId || targetId !== currentId) {
+      return {
+        ok: false,
+        error: "target video does not match the current YouTube page",
+        target_url: targetUrl || "",
+        current_url: location.href,
+      };
+    }
+    window.__ovsAuthorizedYtVideoId = targetId;
+    installYoutubeAdSkipper();
+    return { ok: true, target_url: targetUrl, video_id: targetId, operation_surface: "current browser page" };
+  }
+
+  function installYoutubeAdSkipper() {
+    if (window.__ovsYtAdSkipperInstalled || detectPlatform() !== "youtube") return;
+    window.__ovsYtAdSkipperInstalled = true;
+    let lastClickAt = 0;
+
+    const visible = (el) => {
+      if (!el || el.disabled || el.getAttribute("aria-disabled") === "true") return false;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+
+    const clickIfAvailable = () => {
+      if (!window.__ovsAuthorizedYtVideoId || ytVideoId() !== window.__ovsAuthorizedYtVideoId) return false;
+      const player = document.querySelector("#movie_player, .html5-video-player");
+      if (!player) return false;
+      if (!player.classList.contains("ad-showing") && !player.classList.contains("ad-interrupting")) return false;
+      if (Date.now() - lastClickAt < 1500) return false;
+      const buttons = player.querySelectorAll([
+        ".ytp-skip-ad-button",
+        ".ytp-ad-skip-button",
+        ".ytp-ad-skip-button-modern",
+        ".ytp-ad-skip-button-container button",
+        "button[id^='skip-button']",
+      ].join(","));
+      for (const button of buttons) {
+        const label = [button.getAttribute("aria-label"), button.title, button.textContent]
+          .filter(Boolean)
+          .join(" ");
+        if (!/skip\s*(?:ads?|advertisements?)?|跳过(?:此)?广告|略过广告/i.test(label)) continue;
+        if (!visible(button)) continue;
+        lastClickAt = Date.now();
+        button.click();
+        window.dispatchEvent(new CustomEvent("ovs-youtube-ad-skipped"));
+        return true;
+      }
+      return false;
+    };
+
+    const start = () => {
+      if (!document.documentElement) return;
+      const observer = new MutationObserver(clickIfAvailable);
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "aria-label", "disabled"],
+      });
+      clickIfAvailable();
+      window.__ovsYtAdSkipTimer = setInterval(clickIfAvailable, 750);
+    };
+    if (document.documentElement) start();
+    else document.addEventListener("DOMContentLoaded", start, { once: true });
   }
 
   // ---- network cache: generic caption-like responses ----
@@ -590,7 +675,95 @@
     return extractGeneral(lang);
   }
 
+  function safeFileName(name) {
+    return String(name || "transcript").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 100);
+  }
+
+  function resultToMarkdown(result) {
+    return [
+      `# ${result.title || "(untitled)"}`,
+      "",
+      "## Video info",
+      "",
+      `- Platform: ${result.platform}`,
+      `- Adapter: ${result.adapter}`,
+      `- URL: ${result.url}`,
+      `- Language: ${result.language || "-"}`,
+      `- Track kind: ${(result.track && result.track.kind) || "unknown"}`,
+      `- Method: ${result.method || "-"}`,
+      `- Cue count: ${(result.cues && result.cues.length) || 0}`,
+      "",
+      "## Transcript",
+      "",
+      result.plain_text || "",
+      "",
+    ].join("\n");
+  }
+
+  /**
+   * Deterministic full-transcript handoff: the page writes the extracted text
+   * directly to a browser download. The AI only receives small metadata and
+   * does not need to reproduce the entire transcript in its answer.
+   */
+  async function downloadSubtitle(opts) {
+    if (!opts || opts.acknowledgeLawfulUse !== true) {
+      return {
+        ok: false,
+        requires_acknowledgement: true,
+        acknowledgement: LAWFUL_USE_NOTICE,
+      };
+    }
+    if (!opts.targetUrl) {
+      return { ok: false, requires_target: true, error: "targetUrl is required before the operation starts" };
+    }
+    if (detectPlatform() === "youtube") {
+      const authorization = authorizeYoutubeTarget(opts.targetUrl, true);
+      if (!authorization.ok) return authorization;
+    } else if (new URL(opts.targetUrl, location.href).href !== location.href) {
+      return { ok: false, error: "target URL does not match the current page", target_url: opts.targetUrl, current_url: location.href };
+    }
+    const result = await exportSubtitle(opts || {});
+    const format = ((opts && opts.format) || "md").toLowerCase();
+    let text;
+    let ext;
+    let mime;
+    if (format === "json") {
+      text = JSON.stringify(result, null, 2);
+      ext = "json";
+      mime = "application/json;charset=utf-8";
+    } else if (format === "txt") {
+      text = result.plain_text || "";
+      ext = "txt";
+      mime = "text/plain;charset=utf-8";
+    } else {
+      text = resultToMarkdown(result);
+      ext = "md";
+      mime = "text/markdown;charset=utf-8";
+    }
+    const filename = (opts && opts.filename) || `${safeFileName(result.title)}.${ext}`;
+    const href = URL.createObjectURL(new Blob([text], { type: mime }));
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = filename;
+    a.style.display = "none";
+    (document.body || document.documentElement).appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 2000);
+    return {
+      ok: true,
+      filename,
+      platform: result.platform,
+      language: result.language || "",
+      cue_count: (result.cues && result.cues.length) || 0,
+      method: result.method || "",
+    };
+  }
+
   window.__ovsExportSubtitle = exportSubtitle;
+  window.__ovsDownloadSubtitle = downloadSubtitle;
+  window.__ovsAuthorizeTarget = authorizeYoutubeTarget;
+  window.__ovsLawfulUseNotice = LAWFUL_USE_NOTICE;
   window.__ovsReady = true;
   window.__ovsPlatform = detectPlatform;
   ensureNetworkHook();

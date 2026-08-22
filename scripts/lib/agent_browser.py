@@ -107,7 +107,17 @@ def extract_with_agent_browser(
     settle_seconds: float = 4.0,
     headed: bool = False,
     retries: int = 2,
+    acknowledge_lawful_use: bool = False,
 ) -> ExtractResult:
+    if not acknowledge_lawful_use:
+        return ExtractResult(
+            ok=False,
+            platform="unknown",
+            adapter="agent_browser",
+            url=url,
+            error="Lawful-use acknowledgement is required before browser operation",
+            method="agent-browser",
+        )
     if not agent_browser_available():
         return ExtractResult(
             ok=False,
@@ -171,10 +181,15 @@ def extract_with_agent_browser(
 
             time.sleep(1.2)
             lang_lit = json.dumps(prefer_lang or "")
+            target_lit = json.dumps(url)
             eval_js = (
                 "(async () => {"
                 "  if (typeof window.__ovsExportSubtitle !== 'function') {"
                 "    return JSON.stringify({ok:false,error:'export core not injected'});"
+                "  }"
+                f"  if (typeof window.__ovsAuthorizeTarget === 'function' && window.__ovsPlatform() === 'youtube') {{"
+                f"    const auth = window.__ovsAuthorizeTarget({target_lit}, true);"
+                "    if (!auth || !auth.ok) return JSON.stringify({ok:false,error:(auth&&auth.error)||'target authorization failed'});"
                 "  }"
                 f"  try {{"
                 f"    const r = await window.__ovsExportSubtitle({{ lang: {lang_lit} }});"

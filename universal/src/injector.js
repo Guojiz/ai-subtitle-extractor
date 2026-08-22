@@ -14,6 +14,7 @@
 
   var TAG = 'universal-subtitle-extractor';
   var CMD = TAG + '-cmd';
+  var LAWFUL_USE_NOTICE = '我确认我有权访问该视频和字幕，并仅在法律允许的个人学习、研究或经授权范围内使用；我不会用本工具侵犯版权或规避付费、登录及其他访问控制。此确认不是法律意见，也不会改变平台或模型的规则。';
 
   function send(type, data) {
     try {
@@ -444,6 +445,97 @@
     } catch (e) {}
   }
 
+  /* ------------------------------------------------------------------ *
+   * YouTube 广告：只点击播放器自己提供的“跳过广告”按钮。
+   *
+   * 不快进、不隐藏广告层，也不尝试绕过不可跳过广告。按钮可能在页面加载、
+   * SPA 导航或广告中途才出现，所以用 MutationObserver + 低频轮询兜底。
+   * ------------------------------------------------------------------ */
+  var ytAdSkipInstalled = false;
+  var ytLastAdSkipAt = 0;
+  var ytAuthorizedVideoId = '';
+
+  function ytVideoIdFromUrl(url) {
+    try {
+      var u = new URL(url, location.href);
+      var q = u.searchParams.get('v');
+      if (q) return q;
+      if (u.hostname === 'youtu.be') return u.pathname.split('/').filter(Boolean)[0] || '';
+      var m = u.pathname.match(/\/(?:shorts|embed|live)\/([\w-]{11})/);
+      return m ? m[1] : '';
+    } catch (e) { return ''; }
+  }
+
+  function authorizeYtTarget(targetUrl, opts) {
+    if (!opts || opts.acknowledgeLawfulUse !== true) {
+      return { ok: false, requiresAcknowledgement: true, acknowledgement: LAWFUL_USE_NOTICE };
+    }
+    var targetId = ytVideoIdFromUrl(targetUrl);
+    var currentId = ytVideoIdFromUrl(location.href);
+    if (!targetId || !currentId || targetId !== currentId) {
+      return { ok: false, error: 'target video does not match the current YouTube page', targetUrl: targetUrl || '', currentUrl: location.href };
+    }
+    ytAuthorizedVideoId = targetId;
+    installYtAdSkipper();
+    return { ok: true, targetUrl: targetUrl, videoId: targetId, operationSurface: 'current browser page' };
+  }
+
+  function ytVisible(el) {
+    if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+    var style;
+    try { style = window.getComputedStyle(el); } catch (e) { return false; }
+    if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+    var rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function ytSkipAdIfAvailable() {
+    if (!/youtube\.com$|\.youtube\.com$|youtube-nocookie\.com$/.test(location.hostname)) return false;
+    if (!ytAuthorizedVideoId || ytVideoIdFromUrl(location.href) !== ytAuthorizedVideoId) return false;
+    var player = document.querySelector('#movie_player, .html5-video-player');
+    if (!player) return false;
+    // 避免误点页面其它“跳过”按钮；仅在播放器明确处于广告状态时工作。
+    if (!player.classList.contains('ad-showing') && !player.classList.contains('ad-interrupting')) return false;
+    if (Date.now() - ytLastAdSkipAt < 1500) return false;
+
+    var selectors = [
+      '.ytp-skip-ad-button',
+      '.ytp-ad-skip-button',
+      '.ytp-ad-skip-button-modern',
+      '.ytp-ad-skip-button-container button',
+      'button[id^="skip-button"]'
+    ];
+    var buttons = player.querySelectorAll(selectors.join(','));
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var label = [btn.getAttribute('aria-label'), btn.title, btn.textContent].filter(Boolean).join(' ');
+      if (!/skip\s*(?:ads?|advertisements?)?|跳过(?:此)?广告|略过广告/i.test(label)) continue;
+      if (!ytVisible(btn)) continue;
+      try {
+        ytLastAdSkipAt = Date.now();
+        btn.click();
+        send('status', { level: 'info', msg: 'YouTube：已点击播放器的“跳过广告”按钮' });
+        return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+
+  function installYtAdSkipper() {
+    if (ytAdSkipInstalled) return;
+    if (!/youtube\.com$|\.youtube\.com$|youtube-nocookie\.com$/.test(location.hostname)) return;
+    ytAdSkipInstalled = true;
+    var observer = new MutationObserver(function () { ytSkipAdIfAvailable(); });
+    var start = function () {
+      if (!document.documentElement) return;
+      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-label', 'disabled'] });
+      ytSkipAdIfAvailable();
+    };
+    if (document.documentElement) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+    setInterval(ytSkipAdIfAvailable, 750);
+  }
+
   async function scanYouTube() {
     if (!/youtube\.com|youtube-nocookie\.com/.test(location.hostname)) return false;
     if (!/^\/(watch|shorts\/|embed\/|live\/)/.test(location.pathname)) return false;
@@ -719,8 +811,44 @@
     return REGISTRY.get(idOrTrack) || null;
   }
 
+  function safeDownloadName(name) {
+    return String(name || 'transcript').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 100);
+  }
+
+  function downloadTrack(format, id, filename, opts) {
+    if (!opts || opts.acknowledgeLawfulUse !== true) {
+      return { ok: false, requiresAcknowledgement: true, acknowledgement: LAWFUL_USE_NOTICE };
+    }
+    if (!opts.targetUrl) return { ok: false, requiresTarget: true, error: 'targetUrl is required before the operation starts' };
+    if (/youtube\.com$|\.youtube\.com$|youtube-nocookie\.com$/.test(location.hostname)) {
+      var auth = authorizeYtTarget(opts.targetUrl, opts);
+      if (!auth.ok) return auth;
+    }
+    format = String(format || 'txt').toLowerCase();
+    var t = resolveTrack(id);
+    if (!t) return { ok: false, error: 'no subtitle track available' };
+    var text, ext, mime;
+    if (format === 'srt') {
+      text = toSRT(t.cues); ext = 'srt'; mime = 'application/x-subrip;charset=utf-8';
+    } else if (format === 'vtt') {
+      text = toVTT(t.cues); ext = 'vtt'; mime = 'text/vtt;charset=utf-8';
+    } else if (format === 'json') {
+      text = JSON.stringify(t.cues, null, 2); ext = 'json'; mime = 'application/json;charset=utf-8';
+    } else {
+      text = toText(t.cues); ext = 'txt'; mime = 'text/plain;charset=utf-8';
+    }
+    filename = filename || safeDownloadName(PAGE_META.title || t.label || 'transcript') + '.' + ext;
+    var href = URL.createObjectURL(new Blob([text], { type: mime }));
+    var a = document.createElement('a');
+    a.href = href; a.download = filename; a.style.display = 'none';
+    (document.body || document.documentElement).appendChild(a);
+    a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(href); }, 2000);
+    return { ok: true, filename: filename, cueCount: t.cues.length, format: ext };
+  }
+
   window.__USE__ = {
-    version: '0.2.0',
+    version: '0.3.0',
 
     /** 页面元信息（标题/简介/时长，B站含简介章节） */
     meta: function () { return Object.assign({}, PAGE_META); },
@@ -755,6 +883,17 @@
       var t = resolveTrack(id);
       return t ? toVTT(t.cues) : null;
     },
+
+    /** 由页面直接下载全文，AI 只接收文件元数据，无需在回答中复述全文 */
+    download: function (format, id, filename, opts) {
+      return downloadTrack(format, id, filename, opts);
+    },
+
+    /** 合法使用确认文案；确认不改变平台或模型自身规则 */
+    lawfulUseNotice: function () { return LAWFUL_USE_NOTICE; },
+
+    /** 将广告跳过权限绑定到当前的精确 YouTube 视频；SPA 切换视频后失效 */
+    authorizeTarget: function (targetUrl, opts) { return authorizeYtTarget(targetUrl, opts); },
 
     /** 等待直到至少发现 n 条轨道（默认 1 条），超时返回当前数量 */
     waitFor: function (n, timeoutMs) {

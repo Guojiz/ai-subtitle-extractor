@@ -26,6 +26,7 @@ def extract_youtube_browser(
     prefer_lang: str = "",
     session: str = "subtitle-extract",
     settle_seconds: float = 5.0,
+    acknowledge_lawful_use: bool = False,
 ) -> ExtractResult:
     video_id = _parse_video_id(url)
     if not video_id:
@@ -37,6 +38,15 @@ def extract_youtube_browser(
             error="Could not parse YouTube video id",
         )
     watch_url = f"https://www.youtube.com/watch?v={video_id}"
+    if not acknowledge_lawful_use:
+        return ExtractResult(
+            ok=False,
+            platform="youtube",
+            adapter="youtube_browser",
+            url=watch_url,
+            error="Lawful-use acknowledgement is required before controlling the browser",
+            method="webbridge",
+        )
 
     try:
         wb = WebBridge(session=session)
@@ -181,6 +191,31 @@ _JS_PULL = r"""
 (async () => {
   const prefer = %(prefer)s;
   const videoId = %(video_id)s;
+  const currentVideoId = new URL(location.href).searchParams.get('v') || '';
+  if (currentVideoId !== videoId) return {error: 'target video does not match current browser page'};
+
+  // Scope ad skipping to the exact confirmed target video. Only click the
+  // visible official control; do not seek or bypass unskippable ads.
+  window.__ovsWbAuthorizedVideoId = videoId;
+  if (!window.__ovsWbAdSkipTimer) {
+    window.__ovsWbAdSkipTimer = setInterval(() => {
+      try {
+        const id = new URL(location.href).searchParams.get('v') || '';
+        if (!window.__ovsWbAuthorizedVideoId || id !== window.__ovsWbAuthorizedVideoId) return;
+        const player = document.querySelector('#movie_player, .html5-video-player');
+        if (!player || (!player.classList.contains('ad-showing') && !player.classList.contains('ad-interrupting'))) return;
+        const buttons = player.querySelectorAll('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-container button,button[id^="skip-button"]');
+        for (const button of buttons) {
+          const label = [button.getAttribute('aria-label'), button.title, button.textContent].filter(Boolean).join(' ');
+          const rect = button.getBoundingClientRect();
+          if (/skip\s*(?:ads?|advertisements?)?|跳过(?:此)?广告|略过广告/i.test(label) && !button.disabled && rect.width > 0 && rect.height > 0) {
+            button.click();
+            break;
+          }
+        }
+      } catch (e) {}
+    }, 750);
+  }
   const pr = window.ytInitialPlayerResponse;
   const tracks = (((pr||{}).captions||{}).playerCaptionsTracklistRenderer||{}).captionTracks||[];
   if (!tracks.length) return {error: 'no tracks'};

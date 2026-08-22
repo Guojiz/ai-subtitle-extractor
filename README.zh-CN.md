@@ -22,6 +22,7 @@
 
 ```text
 视频链接
+  → 用户确认：合法使用 + 精确视频 + 操作位置
   → 识别站点（或通用发现）
   → 先问目标语言——要翻译就译成用户想要的语言
   → 发现字幕通道（API / timedtext / VTT·SRT / 转写面板 / <track>）
@@ -45,6 +46,8 @@
 | MV3 扩展形态 | ✅ B站实测 |
 | 油猴安装形态 | ⚠️ 未单独实测 |
 | `scripts/` 的 agent-browser 后端 | ⚠️ 未实测 |
+| 确认后直接下载全文（模型只收元数据） | ✅ Chromium mock 实测 |
+| YouTube 目标级自动点击“跳过广告” | ✅ Chromium mock 实测；真实广告待验证 |
 | 其他站点 | 仅通用发现，不声称支持 |
 
 ## 快速开始（已实测主路径）
@@ -52,22 +55,29 @@
 通过 WebBridge 之类的桥驱动用户真实浏览器（带登录态），用户侧零安装：
 
 ```text
-1. node universal/build.js   → dist/universal-subtitle-extractor.user.js
-2. navigate → 视频页
-3. evaluate → 注入 .user.js 全文（重复注入有守卫）
-4. evaluate → 单次往返提取：
+1. 先取得用户对“合法使用 + 精确视频 URL + 操作位置”的确认
+2. node universal/build.js   → dist/universal-subtitle-extractor.user.js
+3. navigate → 已确认的视频页
+4. evaluate → 注入 .user.js 全文（重复注入有守卫）
+5. evaluate → 把播放器控制绑定到该视频，再等待字幕：
 ```
 
 ```javascript
 (async () => {
+  const videoUrl = location.href; // 必须等于用户确认的精确 URL
+  const auth = window.__USE__.authorizeTarget(videoUrl, {
+    acknowledgeLawfulUse: true
+  });
+  if (!auth.ok) return auth;
   await window.__USE__.waitFor(1, 20000);
-  return JSON.stringify({
-    meta: window.__USE__.meta(),
-    tracks: window.__USE__.list(),
-    text: window.__USE__.text()
+  return window.__USE__.download('txt', null, null, {
+    targetUrl: videoUrl,
+    acknowledgeLawfulUse: true
   });
 })()
 ```
+
+这条路径直接生成下载文件，返回给 Agent 的只有文件名、cue 数量等元数据。自动跳广告也只对该 video id 生效；YouTube SPA 切换到其他视频后不再点击。
 
 ## 仓库地图
 

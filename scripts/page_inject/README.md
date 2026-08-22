@@ -43,8 +43,22 @@ python scripts/extract_subtitles.py "<url>" --agent-browser --lang en -o out.md
 python scripts/extract_subtitles.py "<url>" --agent-browser --headed
 
 # HTTP 失败时自动尝试浏览器（优先 agent-browser）
-python scripts/extract_subtitles.py "<youtube_url>" --browser
+python scripts/extract_subtitles.py "<youtube_url>" --browser \
+  --acknowledge-lawful-use -o transcript.md
 ```
+
+整篇文稿要交给用户时，先取得合法使用确认，再优先调用直接下载 API，避免让模型重新逐字生成全文：
+
+```js
+await window.__ovsDownloadSubtitle({
+  targetUrl: location.href,
+  lang: 'en',
+  format: 'md',
+  acknowledgeLawfulUse: true,
+})
+```
+
+返回值只有文件名、cue 数量和获取方式等元数据，全文由页面写入下载文件。
 
 ## 与商业扩展
 

@@ -21,11 +21,16 @@ def extract_youtube(
     *,
     prefer_lang: str = "",
     use_browser: bool = False,
+    acknowledge_lawful_use: bool = False,
 ) -> ExtractResult:
     if use_browser:
         from .youtube_browser import extract_youtube_browser
 
-        return extract_youtube_browser(url, prefer_lang=prefer_lang)
+        return extract_youtube_browser(
+            url,
+            prefer_lang=prefer_lang,
+            acknowledge_lawful_use=acknowledge_lawful_use,
+        )
 
     video_id = _parse_video_id(url)
     if not video_id:

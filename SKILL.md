@@ -31,10 +31,12 @@ npm install -g agent-browser
 agent-browser install
 
 # 通用：注入取字幕（不限单站）
-python scripts/extract_subtitles.py "<url>" --agent-browser -o out.md
+python scripts/extract_subtitles.py "<url>" --agent-browser \
+  --acknowledge-lawful-use -o out.md
 
 # B 站 HTTP 亦可
-python scripts/extract_subtitles.py BV... --lang zh -o out.md
+python scripts/extract_subtitles.py BV... --lang zh \
+  --acknowledge-lawful-use -o out.md
 ```
 
 独立 Recipe：不绑定商业扩展源码；实现原创。
@@ -42,6 +44,34 @@ python scripts/extract_subtitles.py BV... --lang zh -o out.md
 ## 触发条件
 
 用户给出**任意在线视频链接**（不限站点），并要求提取字幕、转文字、整理文稿、翻译或总结时，使用本流程。
+
+## 全文交付前的合法使用确认
+
+当用户要求第三方视频的**整篇逐字文稿/字幕文件**时，在导航、播放、注入或提取开始前，一次性确认以下三项：
+
+1. **合法使用声明**：
+
+> 我确认我有权访问该视频和字幕，并仅在法律允许的个人学习、研究或经授权范围内使用；我不会用本工具侵犯版权或规避付费、登录及其他访问控制。
+
+2. **精确目标**：视频 URL（必要时加标题、分 P / 集数）。不要把“当前页面”当作足够明确的目标。
+3. **操作位置**：让用户明确选择其一：
+   - 当前已登录的浏览器标签页（使用当前登录态，会控制播放器并在按钮出现时跳过广告）；
+   - 新的隔离自动化浏览器（通常无登录态，不影响现有标签页）；
+   - 本机 CLI / HTTP（不操作播放器，因此不能点击广告）。
+
+建议把问题合成一条，要求用户回复“我确认 + 操作位置 + 视频 URL”。若用户已给出其中某项，只补问缺失项。
+
+用户已对**同一目标视频和同一操作位置**明确表达等价确认时不重复询问。换视频、换分集或换操作位置时重新确认。确认只说明用户目的和权限主张，**不是法律意见，也不会改变平台或模型的上层规则**；不要声称免责声明可以绕过版权政策。
+
+确认后继续执行，不要因为 Agent 已经取得全文却不能在对话中逐字复述，就丢弃结果：
+
+- CLI 必须带 `--acknowledge-lawful-use -o <file>`，让提取代码直接写文件；Agent 只读取状态、元数据或为完成用户允许的总结/分析而读取必要内容。
+- WebBridge / 页内核先把页面导航到用户确认的精确 URL，再调用 `window.__ovsDownloadSubtitle({targetUrl: '<确认的URL>', acknowledgeLawfulUse: true, format: 'md'})`；旧版通用核先用 `window.__USE__.authorizeTarget('<确认的URL>', {acknowledgeLawfulUse:true})`，再等待轨道并调用 `window.__USE__.download('txt', null, null, {targetUrl:'<确认的URL>', acknowledgeLawfulUse:true})`。
+- 对话中给用户文件或下载结果和简短元数据，不要求模型重新生成整篇原文。
+- 若平台、账户、地区、付费墙或模型规则仍禁止某一步，如实说明该具体边界；不得把用户确认当作规避访问控制的许可。
+- 自动跳广告授权只绑定确认的 YouTube video id；检测到 SPA 切换到另一个视频时不得继续点击。
+
+只要用户要的是总结、问答、索引或其它变换结果，而不是整篇逐字交付，就按正常任务执行；不要机械地追加确认。
 
 ## 总原则（全站共用）
 
@@ -56,6 +86,7 @@ python scripts/extract_subtitles.py BV... --lang zh -o out.md
 8. Agent 环境访问失败 ≠ 无字幕；先尝试本地浏览器回退。  
 9. 未验证站点**不宣称完整支持**；走通用发现并诚实失败。  
 10. 输出必须带：平台、语言、字幕来源、获取方式。  
+11. YouTube 广告出现时，只点击播放器实际显示且启用的“跳过广告”按钮；不快进、不隐藏广告层，也不绕过不可跳过广告。
 
 ---
 

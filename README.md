@@ -22,6 +22,7 @@ The core of this repo is the recipe in [`SKILL.md`](./SKILL.md): one shared pipe
 
 ```text
 video link
+  → confirm lawful use + exact video + operation surface
   → identify site (or generic discovery)
   → ask the target language first — translate into the language the user wants
   → find captions (API / timedtext / VTT·SRT / transcript panel / <track>)
@@ -45,6 +46,8 @@ Only what actually ran is claimed.
 | MV3 extension form | ✅ Verified on Bilibili |
 | Tampermonkey install form | ⚠️ Not independently tested |
 | agent-browser backend in `scripts/` | ⚠️ Not yet tested |
+| Acknowledged direct transcript download (metadata-only model return) | ✅ Verified in Chromium mock |
+| Target-scoped YouTube “Skip ad” click | ✅ Verified in Chromium mock; real ads pending |
 | Any other site | Generic discovery only |
 
 ## Quick start (verified main path)
@@ -52,22 +55,29 @@ Only what actually ran is claimed.
 Drive the user's real browser (their login session) through a bridge like Kimi WebBridge — nothing to install:
 
 ```text
-1. node universal/build.js   → dist/universal-subtitle-extractor.user.js
-2. navigate → the video page
-3. evaluate → inject the .user.js file (re-injection guarded)
-4. evaluate → extract in one round trip:
+1. Confirm lawful use, the exact video URL, and the operation surface with the user
+2. node universal/build.js   → dist/universal-subtitle-extractor.user.js
+3. navigate → the confirmed video page
+4. evaluate → inject the .user.js file (re-injection guarded)
+5. evaluate → bind player control to that exact target, then export:
 ```
 
 ```javascript
 (async () => {
+  const videoUrl = location.href; // must equal the URL the user confirmed
+  const auth = window.__USE__.authorizeTarget(videoUrl, {
+    acknowledgeLawfulUse: true
+  });
+  if (!auth.ok) return auth;
   await window.__USE__.waitFor(1, 20000);
-  return JSON.stringify({
-    meta: window.__USE__.meta(),
-    tracks: window.__USE__.list(),
-    text: window.__USE__.text()
+  return window.__USE__.download('txt', null, null, {
+    targetUrl: videoUrl,
+    acknowledgeLawfulUse: true
   });
 })()
 ```
+
+The page writes the full transcript to a download and returns only metadata to the agent. Ad skipping is authorized only for that video id and stops after a YouTube SPA navigation to another video.
 
 ## Repository layout
 

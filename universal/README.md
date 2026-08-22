@@ -69,6 +69,9 @@ context.add_init_script(path="universal-subtitle-extractor.user.js")
 | `get(id?)` | track（含 `cues`） | 不传 id 自动取最优；`cues = [{start, end, text}]` 秒为单位 |
 | `text(id?, opts?)` | string | 整理后的可读文本，碎片已合并分段；`opts: {timestamps, gap=1.5, paragraphLength=260}` |
 | `srt(id?)` / `vtt(id?)` | string | 标准 SRT / WebVTT |
+| `authorizeTarget(url, {acknowledgeLawfulUse:true})` | metadata | 把播放器控制/跳广告授权绑定到精确 YouTube 视频 |
+| `download(format, id?, filename?, {targetUrl, acknowledgeLawfulUse:true})` | metadata | 页面直接下载全文（txt/srt/vtt/json），Agent 不接收全文 |
+| `lawfulUseNotice()` | string | 全文导出前的合法使用确认文案 |
 | `meta()` | `{site, title, desc, duration, ...}` | 视频元信息，B 站含简介（章节时间轴在 `desc` 里） |
 | `waitFor(n=1, ms=15000)` | `Promise<number>` | 等到至少 n 条轨道，供自动化等待 |
 | `scan()` | — | 手动重扫（网络嗅探本身持续进行） |
@@ -82,6 +85,19 @@ page.evaluate("window.__USE__.waitFor(1, 20000)")
 tracks = page.evaluate("window.__USE__.list()")   # 让用户/Agent 选轨道
 text   = page.evaluate("window.__USE__.text()")   # 最优轨道的整理文本
 ```
+
+用户要求整篇原文文件时，先取得合法使用确认，再让页面直接下载：
+
+```javascript
+window.__USE__.authorizeTarget(videoUrl, {acknowledgeLawfulUse: true})
+// waitFor / 提取完成后：
+window.__USE__.download('txt', null, null, {
+  targetUrl: videoUrl,
+  acknowledgeLawfulUse: true,
+})
+```
+
+YouTube 页面还会监测播放器的官方“跳过广告”按钮：仅在播放器处于广告状态、按钮可见且启用时点击；不可跳过广告不会被快进或绕过。
 
 ## 实测踩过的坑（已修，已合并进根目录 SKILL.md「失败处理」）
 
