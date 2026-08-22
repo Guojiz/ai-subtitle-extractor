@@ -50,6 +50,8 @@ class ExtractResult:
     limits: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        from .clean import source_cue_coverage_report
+
         return {
             "ok": self.ok,
             "platform": self.platform,
@@ -61,6 +63,8 @@ class ExtractResult:
             "cue_count": len(self.cues),
             "cues": [c.to_dict() for c in self.cues],
             "plain_text": self.plain_text,
+            "source_coverage": source_cue_coverage_report(self.cues, self.plain_text),
+            "requires_editorial_pass": True,
             "chapters": self.chapters,
             "method": self.method,
             "error": self.error,
@@ -83,6 +87,9 @@ class ExtractResult:
             return "\n".join(lines) + "\n"
 
         track = self.track
+        from .clean import source_cue_coverage_report
+
+        coverage = source_cue_coverage_report(self.cues, self.plain_text)
         lines = [
             f"# {self.title or '(untitled)'}",
             "",
@@ -96,11 +103,12 @@ class ExtractResult:
             f"- Track label: {(track.label if track else '') or '-'}",
             f"- Method: {self.method or '-'}",
             f"- Cue count: {len(self.cues)}",
+            f"- Source cue coverage: {coverage['covered_cues']}/{coverage['total_cues']}",
             "",
         ]
         if self.chapters:
             lines += ["## Chapters / description", "", self.chapters.strip(), ""]
-        lines += ["## Transcript", "", self.plain_text.strip(), ""]
+        lines += ["## Source transcript (editorial pass required)", "", self.plain_text.strip(), ""]
         if self.limits:
             lines += ["## Limits", ""] + [f"- {x}" for x in self.limits] + [""]
         return "\n".join(lines)

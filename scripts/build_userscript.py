@@ -12,7 +12,7 @@ OUT = ROOT / "userscripts" / "ai-subtitle-extractor.user.js"
 HEADER = """// ==UserScript==
 // @name         AI Subtitle Extractor
 // @namespace    https://github.com/Guojiz/ai-subtitle-extractor
-// @version      0.4.0
+// @version      0.5.0
 // @description  Platform-agnostic page inject: export existing captions (YouTube/Bilibili/general discovery). Works with Tampermonkey and agent-browser. Standalone. Not affiliated with commercial translate extensions.
 // @author       AI Subtitle Extractor contributors
 // @match        *://*/*
@@ -120,8 +120,9 @@ UI_SHELL = r"""
       `- Track kind: ${r.track && r.track.kind}`,
       `- Method: ${r.method}`,
       `- Cue count: ${(r.cues && r.cues.length) || 0}`,
+      `- Source cue coverage: ${(r.source_coverage && r.source_coverage.covered_cues) || 0}/${(r.source_coverage && r.source_coverage.total_cues) || 0}`,
       "",
-      "## Transcript",
+      "## Source transcript (editorial pass required)",
       "",
       r.plain_text || "",
       "",

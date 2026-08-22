@@ -54,6 +54,37 @@ def paragraphs_to_text(paragraphs: list[str]) -> str:
     return "\n\n".join(paragraphs)
 
 
+def source_cue_coverage_report(cues: list[Cue], text: str) -> dict[str, object]:
+    """Verify raw caption capture before editorial article conversion.
+
+    Whitespace-only formatting changes are ignored. This protects the source
+    evidence supplied to an editor; final articles may remove filler, false
+    starts, and redundant speech while preserving all substantive information.
+    """
+    haystack = _normalize_for_coverage(text)
+    cursor = 0
+    covered = 0
+    missing: list[int] = []
+    total = 0
+    for index, cue in enumerate(cues):
+        needle = _normalize_for_coverage(cue.text or "")
+        if not needle:
+            continue
+        total += 1
+        position = haystack.find(needle, cursor)
+        if position < 0:
+            missing.append(index)
+            continue
+        covered += 1
+        cursor = position + len(needle)
+    return {
+        "complete": covered == total,
+        "total_cues": total,
+        "covered_cues": covered,
+        "missing_cue_indexes": missing,
+    }
+
+
 def _join(parts: list[str], join_without_space: bool) -> str:
     if join_without_space:
         return "".join(parts).strip()
@@ -67,3 +98,7 @@ def _join(parts: list[str], join_without_space: bool) -> str:
 def _looks_cjk(text: str) -> bool:
     cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
     return cjk >= max(1, len(text) // 4)
+
+
+def _normalize_for_coverage(text: str) -> str:
+    return " ".join(str(text).split())

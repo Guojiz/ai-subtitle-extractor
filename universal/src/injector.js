@@ -815,6 +815,21 @@
     return String(name || 'transcript').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 100);
   }
 
+  function sourceCueCoverageReport(cues, text) {
+    var normalize = function (value) { return String(value || '').trim().replace(/\s+/g, ' '); };
+    var haystack = normalize(text), cursor = 0, total = 0, covered = 0, missing = [];
+    (cues || []).forEach(function (cue, index) {
+      var needle = normalize(cue && cue.text);
+      if (!needle) return;
+      total++;
+      var position = haystack.indexOf(needle, cursor);
+      if (position < 0) { missing.push(index); return; }
+      covered++;
+      cursor = position + needle.length;
+    });
+    return { complete: covered === total, totalCues: total, coveredCues: covered, missingCueIndexes: missing };
+  }
+
   function downloadTrack(format, id, filename, opts) {
     if (!opts || opts.acknowledgeLawfulUse !== true) {
       return { ok: false, requiresAcknowledgement: true, acknowledgement: LAWFUL_USE_NOTICE };
@@ -827,6 +842,7 @@
     format = String(format || 'txt').toLowerCase();
     var t = resolveTrack(id);
     if (!t) return { ok: false, error: 'no subtitle track available' };
+    var readableText = toText(t.cues);
     var text, ext, mime;
     if (format === 'srt') {
       text = toSRT(t.cues); ext = 'srt'; mime = 'application/x-subrip;charset=utf-8';
@@ -844,11 +860,21 @@
     (document.body || document.documentElement).appendChild(a);
     a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(href); }, 2000);
-    return { ok: true, filename: filename, cueCount: t.cues.length, format: ext };
+    return {
+      ok: true,
+      filename: filename,
+      cueCount: t.cues.length,
+      format: ext,
+      sourceText: readableText,
+      plainText: readableText,
+      cues: t.cues.slice(),
+      sourceCoverage: sourceCueCoverageReport(t.cues, readableText),
+      requiresEditorialPass: true
+    };
   }
 
   window.__USE__ = {
-    version: '0.3.0',
+    version: '0.4.0',
 
     /** 页面元信息（标题/简介/时长，B站含简介章节） */
     meta: function () { return Object.assign({}, PAGE_META); },
@@ -884,7 +910,7 @@
       return t ? toVTT(t.cues) : null;
     },
 
-    /** 由页面直接下载全文，AI 只接收文件元数据，无需在回答中复述全文 */
+    /** 下载完整来源字幕并返回 cues；Agent 整理为文章后再向用户交付 */
     download: function (format, id, filename, opts) {
       return downloadTrack(format, id, filename, opts);
     },

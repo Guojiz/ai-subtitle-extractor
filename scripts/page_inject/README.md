@@ -47,7 +47,7 @@ python scripts/extract_subtitles.py "<youtube_url>" --browser \
   --acknowledge-lawful-use -o transcript.md
 ```
 
-整篇文稿要交给用户时，先取得合法使用确认，再优先调用直接下载 API，避免让模型重新逐字生成全文：
+制作整篇文章时，先取得合法使用确认，再用直接下载 API 取得完整来源字幕作为编辑素材：
 
 ```js
 await window.__ovsDownloadSubtitle({
@@ -58,7 +58,7 @@ await window.__ovsDownloadSubtitle({
 })
 ```
 
-返回值只有文件名、cue 数量和获取方式等元数据，全文由页面写入下载文件。
+返回值包含完整来源 `source_text/plain_text`、`cues`、来源读取覆盖报告和 `requires_editorial_pass`。Agent 不应原样倾倒口语字幕；应删除无意义口语噪声、保留全部实质信息、重组并翻译为自然文章，再执行总结、问答等后续操作。
 
 ## 与商业扩展
 

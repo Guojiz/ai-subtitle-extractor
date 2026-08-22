@@ -26,8 +26,10 @@ video link
   → identify site (or generic discovery)
   → ask the target language first — translate into the language the user wants
   → find captions (API / timedtext / VTT·SRT / transcript panel / <track>)
-  → human track first → full timed cues → readable text
-  → return: text + platform + language + source + method
+  → human track first → capture and verify all timed cues
+  → remove speech noise while preserving every substantive claim and detail
+  → restructure as a natural article and fully translate when needed
+  → deliver the complete article before summaries, Q&A, or other follow-up work
   → site unreachable: fall back to the user's local browser
   → truly no captions: say so (only then consider ASR)
 ```
@@ -46,7 +48,8 @@ Only what actually ran is claimed.
 | MV3 extension form | ✅ Verified on Bilibili |
 | Tampermonkey install form | ⚠️ Not independently tested |
 | agent-browser backend in `scripts/` | ⚠️ Not yet tested |
-| Acknowledged direct transcript download (metadata-only model return) | ✅ Verified in Chromium mock |
+| Acknowledged download + complete source/cue return | ✅ Verified in Chromium mock |
+| Source-cue capture integrity | ✅ Verified in pure Python + Chromium mock |
 | Target-scoped YouTube “Skip ad” click | ✅ Verified in Chromium mock; real ads pending |
 | Any other site | Generic discovery only |
 
@@ -77,7 +80,7 @@ Drive the user's real browser (their login session) through a bridge like Kimi W
 })()
 ```
 
-The page writes the full transcript to a download and returns only metadata to the agent. Ad skipping is authorized only for that video id and stops after a YouTube SPA navigation to another video.
+The page returns the complete source transcript, cues, and capture report with `requiresEditorialPass`; this is evidence, not the final article. The Agent removes filler, false starts, and meaningless repetition while retaining substantive claims, examples, numbers, conditions, and conclusions, then restructures and translates the complete article before follow-up work. Ad skipping is authorized only for that video id and stops after a YouTube SPA navigation to another video.
 
 ## Repository layout
 

@@ -69,6 +69,33 @@
     });
   }
 
+  function sourceCoverageReport(cues, text) {
+    const normalize = (value) => String(value || "").trim().replace(/\s+/g, " ");
+    const haystack = normalize(text);
+    let cursor = 0;
+    let total = 0;
+    let covered = 0;
+    const missingCueIndexes = [];
+    (cues || []).forEach((cue, index) => {
+      const needle = normalize(cue && cue.text);
+      if (!needle) return;
+      total++;
+      const position = haystack.indexOf(needle, cursor);
+      if (position < 0) {
+        missingCueIndexes.push(index);
+        return;
+      }
+      covered++;
+      cursor = position + needle.length;
+    });
+    return {
+      complete: covered === total,
+      total_cues: total,
+      covered_cues: covered,
+      missing_cue_indexes: missingCueIndexes,
+    };
+  }
+
   function detectPlatform() {
     const h = location.hostname;
     if (h.includes("youtube") || h.includes("youtu.be")) return "youtube";
@@ -670,9 +697,13 @@
     const lang = (opts && opts.lang) || "";
     const force = (opts && opts.adapter) || "auto";
     const plat = force === "auto" ? detectPlatform() : force;
-    if (plat === "youtube") return extractYoutube(lang);
-    if (plat === "bilibili") return extractBilibili(lang);
-    return extractGeneral(lang);
+    let result;
+    if (plat === "youtube") result = await extractYoutube(lang);
+    else if (plat === "bilibili") result = await extractBilibili(lang);
+    else result = await extractGeneral(lang);
+    result.source_coverage = sourceCoverageReport(result.cues, result.plain_text);
+    result.requires_editorial_pass = true;
+    return result;
   }
 
   function safeFileName(name) {
@@ -692,8 +723,9 @@
       `- Track kind: ${(result.track && result.track.kind) || "unknown"}`,
       `- Method: ${result.method || "-"}`,
       `- Cue count: ${(result.cues && result.cues.length) || 0}`,
+      `- Source cue coverage: ${(result.source_coverage && result.source_coverage.covered_cues) || 0}/${(result.source_coverage && result.source_coverage.total_cues) || 0}`,
       "",
-      "## Transcript",
+      "## Source transcript (editorial pass required)",
       "",
       result.plain_text || "",
       "",
@@ -701,9 +733,8 @@
   }
 
   /**
-   * Deterministic full-transcript handoff: the page writes the extracted text
-   * directly to a browser download. The AI only receives small metadata and
-   * does not need to reproduce the entire transcript in its answer.
+   * Source handoff: write a local file and return every cue to the Agent. The
+   * Agent must turn this evidence into a readable article before user delivery.
    */
   async function downloadSubtitle(opts) {
     if (!opts || opts.acknowledgeLawfulUse !== true) {
@@ -757,6 +788,11 @@
       language: result.language || "",
       cue_count: (result.cues && result.cues.length) || 0,
       method: result.method || "",
+      source_text: result.plain_text || "",
+      plain_text: result.plain_text || "",
+      cues: result.cues || [],
+      source_coverage: result.source_coverage || sourceCoverageReport(result.cues, result.plain_text),
+      requires_editorial_pass: true,
     };
   }
 

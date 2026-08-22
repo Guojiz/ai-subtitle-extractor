@@ -70,7 +70,7 @@ context.add_init_script(path="universal-subtitle-extractor.user.js")
 | `text(id?, opts?)` | string | 整理后的可读文本，碎片已合并分段；`opts: {timestamps, gap=1.5, paragraphLength=260}` |
 | `srt(id?)` / `vtt(id?)` | string | 标准 SRT / WebVTT |
 | `authorizeTarget(url, {acknowledgeLawfulUse:true})` | metadata | 把播放器控制/跳广告授权绑定到精确 YouTube 视频 |
-| `download(format, id?, filename?, {targetUrl, acknowledgeLawfulUse:true})` | metadata | 页面直接下载全文（txt/srt/vtt/json），Agent 不接收全文 |
+| `download(format, id?, filename?, {targetUrl, acknowledgeLawfulUse:true})` | source result | 页面下载完整来源字幕，并返回 `sourceText`、`cues`、来源覆盖报告与 `requiresEditorialPass` |
 | `lawfulUseNotice()` | string | 全文导出前的合法使用确认文案 |
 | `meta()` | `{site, title, desc, duration, ...}` | 视频元信息，B 站含简介（章节时间轴在 `desc` 里） |
 | `waitFor(n=1, ms=15000)` | `Promise<number>` | 等到至少 n 条轨道，供自动化等待 |
@@ -86,7 +86,7 @@ tracks = page.evaluate("window.__USE__.list()")   # 让用户/Agent 选轨道
 text   = page.evaluate("window.__USE__.text()")   # 最优轨道的整理文本
 ```
 
-用户要求整篇原文文件时，先取得合法使用确认，再让页面直接下载：
+用户要求完整文章时，先取得合法使用确认，再下载完整来源字幕作为编辑素材：
 
 ```javascript
 window.__USE__.authorizeTarget(videoUrl, {acknowledgeLawfulUse: true})
@@ -98,6 +98,8 @@ window.__USE__.download('txt', null, null, {
 ```
 
 YouTube 页面还会监测播放器的官方“跳过广告”按钮：仅在播放器处于广告状态、按钮可见且启用时点击；不可跳过广告不会被快进或绕过。
+
+`download()` 返回完整来源证据，不是最终文章。`requiresEditorialPass` 为真时，Agent 必须删除填充词、失败起句和无意义重复，保留全部实质观点与细节，重组为自然文章；若语言不同，再完整翻译为用户语言，之后才能执行摘要、问答等后续操作。
 
 ## 实测踩过的坑（已修，已合并进根目录 SKILL.md「失败处理」）
 

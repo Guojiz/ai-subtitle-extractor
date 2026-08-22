@@ -156,7 +156,11 @@ def test_page_core_acknowledged_download(p):
     text = Path(download_info.value.path()).read_text(encoding="utf-8")
     assert meta["ok"] and meta["cue_count"] == 3, meta
     assert "Hello world" in text, text
-    assert "plain_text" not in meta, meta  # AI 只拿元数据，不接收全文
+    assert meta["plain_text"] == text, meta
+    assert meta["source_text"] == text, meta
+    assert len(meta["cues"]) == 3, meta
+    assert meta["source_coverage"]["complete"], meta
+    assert meta["requires_editorial_pass"], meta
     browser.close()
     print("YOUTUBE_ACK_DOWNLOAD_OK", json.dumps(meta, ensure_ascii=False))
 
